@@ -1,0 +1,204 @@
+# 1. Define variables
+RESOURCE_GROUP="Test-rg"
+LOCATION="eastus"
+
+# 2. Create a resource group
+az group create --name $RESOURCE_GROUP --location $LOCATION
+
+# 3. Create VNet 1 (10.1.0.0/16)
+az network vnet create \
+  --resource-group $RESOURCE_GROUP \
+  --name vnet-1 \
+  --address-prefixes 10.1.0.0/16 \
+  --subnet-name default \
+  --subnet-prefixes 10.1.0.0/24
+
+# 4. Create VNet 2 (10.2.0.0/16)
+az network vnet create \
+  --resource-group $RESOURCE_GROUP \
+  --name vnet-2 \
+  --address-prefixes 10.2.0.0/16 \
+  --subnet-name default \
+  --subnet-prefixes 10.2.0.0/24
+
+# 5. Create VNet 3 (10.3.0.0/16)
+az network vnet create \
+  --resource-group $RESOURCE_GROUP \
+  --name vnet-3 \
+  --address-prefixes 10.3.0.0/16 \
+  --subnet-name default \
+  --subnet-prefixes 10.3.0.0/24
+
+
+RESOURCE_GROUP="Test-rg"
+
+# --- Peer VNet 1 and VNet 2 ---
+# 1. Connect VNet 1 -> VNet 2
+az network vnet peering create \
+  --name vnet-1-to-vnet-2 \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name vnet-1 \
+  --remote-vnet vnet-2 \
+  --allow-vnet-access
+
+# 2. Connect VNet 2 -> VNet 1
+az network vnet peering create \
+  --name vnet-2-to-vnet-1 \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name vnet-2 \
+  --remote-vnet vnet-1 \
+  --allow-vnet-access
+
+# --- Peer VNet 1 and VNet 3 ---
+# 3. Connect VNet 1 -> VNet 3
+az network vnet peering create \
+  --name vnet-1-to-vnet-3 \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name vnet-1 \
+  --remote-vnet vnet-3 \
+  --allow-vnet-access
+
+# 4. Connect VNet 3 -> VNet 1
+az network vnet peering create \
+  --name vnet-3-to-vnet-1 \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name vnet-3 \
+  --remote-vnet vnet-1 \
+  --allow-vnet-access
+
+
+RESOURCE_GROUP="my-network-rg"
+LOCATION="uksouth"
+VNET_NAME="vnet-1"
+GW_NAME="vnet-1-gw"
+PIP_NAME="vnet-1-gw-pip"
+
+# 1. Create the required GatewaySubnet (must be named 'GatewaySubnet')
+az network vnet subnet create \
+  --resource-group Test-rg \
+  --vnet-name vnet-1 \
+  --name GatewaySubnet \
+  --address-prefixes 10.1.255.0/27
+
+# 2. Create a Standard SKU Public IP address
+az network public-ip create \
+  --resource-group $RESOURCE_GROUP \
+  --name $PIP_NAME \
+  --sku Standard \
+  --allocation-method Static
+
+# 3. Create the Virtual Network Gateway (takes ~20-45 mins)
+az network vnet-gateway create \
+  --resource-group $RESOURCE_GROUP \
+  --name $GW_NAME \
+  --location $LOCATION \
+  --public-ip-addresses $PIP_NAME \
+  --vnet $VNET_NAME \
+  --gateway-type Vpn \
+  --vpn-type RouteBased \
+  --sku VpnGw1 \
+  --no-wait
+
+
+
+RESOURCE_GROUP="Test-rg"
+LOCATION="eastus"
+
+# --- VNet 1 NSG ---
+az network nsg create \
+  --resource-group $RESOURCE_GROUP \
+  --name vnet-1-nsg \
+  --location $LOCATION
+
+az network vnet subnet update \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name vnet-1 \
+  --name default \
+  --network-security-group vnet-1-nsg
+
+# --- VNet 2 NSG ---
+az network nsg create \
+  --resource-group $RESOURCE_GROUP \
+  --name vnet-2-nsg \
+  --location $LOCATION
+
+az network vnet subnet update \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name vnet-2 \
+  --name default \
+  --network-security-group vnet-2-nsg
+
+# --- VNet 3 NSG ---
+az network nsg create \
+  --resource-group $RESOURCE_GROUP \
+  --name vnet-3-nsg \
+  --location $LOCATION
+
+az network vnet subnet update \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name vnet-3 \
+  --name default \
+  --network-security-group vnet-3-nsg
+
+
+
+
+RESOURCE_GROUP="Test-rg"
+
+# --- Block VNet 3 traffic on VNet 2's NSG ---
+# 1. Deny Inbound from VNet 3 (10.3.0.0/16)
+az network nsg rule create \
+  --resource-group $RESOURCE_GROUP \
+  --nsg-name vnet-2-nsg \
+  --name Deny-Inbound-From-VNet3 \
+  --priority 100 \
+  --direction Inbound \
+  --access Deny \
+  --protocol '*' \
+  --source-address-prefixes 10.3.0.0/16 \
+  --source-port-ranges '*' \
+  --destination-address-prefixes '*' \
+  --destination-port-ranges '*'
+
+# 2. Deny Outbound to VNet 3 (10.3.0.0/16)
+az network nsg rule create \
+  --resource-group $RESOURCE_GROUP \
+  --nsg-name vnet-2-nsg \
+  --name Deny-Outbound-To-VNet3 \
+  --priority 100 \
+  --direction Outbound \
+  --access Deny \
+  --protocol '*' \
+  --source-address-prefixes '*' \
+  --source-port-ranges '*' \
+  --destination-address-prefixes 10.3.0.0/16 \
+  --destination-port-ranges '*'
+
+# --- Block VNet 2 traffic on VNet 3's NSG ---
+# 3. Deny Inbound from VNet 2 (10.2.0.0/16)
+az network nsg rule create \
+  --resource-group $RESOURCE_GROUP \
+  --nsg-name vnet-3-nsg \
+  --name Deny-Inbound-From-VNet2 \
+  --priority 100 \
+  --direction Inbound \
+  --access Deny \
+  --protocol '*' \
+  --source-address-prefixes 10.2.0.0/16 \
+  --source-port-ranges '*' \
+  --destination-address-prefixes '*' \
+  --destination-port-ranges '*'
+
+# 4. Deny Outbound to VNet 2 (10.2.0.0/16)
+az network nsg rule create \
+  --resource-group $RESOURCE_GROUP \
+  --nsg-name vnet-3-nsg \
+  --name Deny-Outbound-To-VNet2 \
+  --priority 100 \
+  --direction Outbound \
+  --access Deny \
+  --protocol '*' \
+  --source-address-prefixes '*' \
+  --source-port-ranges '*' \
+  --destination-address-prefixes 10.2.0.0/16 \
+  --destination-port-ranges '*'
